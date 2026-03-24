@@ -125,7 +125,7 @@ Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
   "category": "positive|question|flag|neutral|spam|escalate",
   "include_in_queue": true|false,
   "priority": "high|standard|skip",
-  "suggested_reply": "A warm reply in Hallow's voice, or null if not applicable",
+  "suggested_reply": "A warm, specific reply in Hallow's voice — always provide one unless category is spam or priority is skip",
   "reason": "One concise sentence explaining your classification"
 }`;
   const userMessage = `<comment>
@@ -509,6 +509,7 @@ function App() {
   const [toastMsg, setToastMsg] = useState(null);
   const [ytToken, setYtToken] = useState(null);
   const [fetching, setFetching] = useState(false);
+  const [analysingCount, setAnalysingCount] = useState(0);
   const toastKey = useRef(0);
   const tokenClientRef = useRef(null);
 
@@ -578,14 +579,15 @@ function App() {
         };
       });
 
-      let newOnes = [];
-      setComments(prev => {
-        const existingIds = new Set(prev.map(c => c.id));
-        newOnes = fetched.filter(c => !existingIds.has(c.id));
-        return [...newOnes, ...prev.filter(c => !c._isDemo)];
-      });
-      toast(`Loaded ${fetched.length} comments — analysing…`);
-      if (newOnes.length > 0) batchAnalyse(newOnes);
+      const existingIds = new Set(comments.map(c => c.id));
+      const newOnes = fetched.filter(c => !existingIds.has(c.id));
+      setComments(prev => [...newOnes, ...prev.filter(c => !c._isDemo)]);
+      if (newOnes.length > 0) {
+        toast(`Loaded ${newOnes.length} new comments — analysing…`);
+        batchAnalyse(newOnes);
+      } else {
+        toast("No new comments");
+      }
     } catch(e) {
       toast("Failed to fetch comments");
       console.error("Fetch error:", e.message);
@@ -595,6 +597,7 @@ function App() {
 
   async function batchAnalyse(newComments) {
     if (!config.anthropicKey) return;
+    setAnalysingCount(newComments.length);
     const BATCH = 4;
     for (let i = 0; i < newComments.length; i += BATCH) {
       await Promise.all(
@@ -612,11 +615,14 @@ function App() {
             ));
           } catch(e) {
             console.error("Batch analyse error:", e.message);
+          } finally {
+            setAnalysingCount(n => Math.max(0, n - 1));
           }
         })
       );
     }
-    toast("Analysis complete");
+    setTab("queue");
+    toast("Reply queue ready");
   }
 
   function handleFetchLatest() {
@@ -655,8 +661,12 @@ function App() {
           </div>
         </div>
         {connected && (
-          <button className="btn" style={{ fontSize: 12 }} onClick={handleFetchLatest} disabled={fetching}>
-            {fetching ? <><span className="spinner" style={{ borderTopColor: "#111" }} /> Fetching…</> : ytToken ? "Fetch latest" : "Connect YouTube"}
+          <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={handleFetchLatest} disabled={fetching || analysingCount > 0}>
+            {fetching
+              ? <><span className="spinner" /> Fetching…</>
+              : analysingCount > 0
+              ? <><span className="spinner" /> Analysing {analysingCount}…</>
+              : ytToken ? "Load & analyse comments" : "Connect YouTube"}
           </button>
         )}
       </div>
