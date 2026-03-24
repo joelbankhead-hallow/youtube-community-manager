@@ -113,6 +113,15 @@ const DEMO_COMMENTS = [
   { id: 6, author: "Rosa L.", text: "Growing up Catholic I always rushed through the rosary. Coming back to it as an adult and actually slowing down has been healing in a way I didn't expect", videoTitle: "Luminous Mysteries of the Rosary", publishedAt: "8h ago", likeCount: 18, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
 ];
 
+function escapeXml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 const CATEGORY_CLASS = { positive: "badge-positive", question: "badge-question", flag: "badge-flag", neutral: "badge-neutral", spam: "badge-neutral", escalate: "badge-escalate" };
 const CATEGORY_LABELS = { positive: "Positive", question: "Question", flag: "Flag", neutral: "Neutral", spam: "Spam", escalate: "Escalate ⚠" };
 
@@ -136,7 +145,7 @@ function SetupTab({ config, setConfig, onComplete }) {
       <div className="card" style={{ marginBottom: 20, background: "#EAF3DE", borderColor: "#C0DD97" }}>
         <p style={{ fontSize: 13, color: "#3B6D11", lineHeight: 1.7 }}>
           This is a one-time setup. Once connected, the app will poll for new comments and analyse them using the guidelines you set.
-          Your credentials are stored locally in this browser only.
+          Your credentials are stored in sessionStorage only — they are cleared when you close this tab.
         </p>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
@@ -199,7 +208,7 @@ function SetupTab({ config, setConfig, onComplete }) {
                     </button>
                   </div>
                   <p style={{ fontSize: 12, color: "#aaa", lineHeight: 1.6 }}>
-                    All credentials are saved to your browser's localStorage only — they never leave your device except to call YouTube's and Anthropic's own API endpoints directly.
+                    Credentials are stored in sessionStorage only — they are never written to disk and are cleared automatically when you close this tab. They leave your device only to call YouTube's and Anthropic's API endpoints directly.
                   </p>
                 </div>
               )}
@@ -242,18 +251,12 @@ function CommentCard({ comment, guidelines, anthropicKey, onAction, toast }) {
   async function analyse() {
     setLoading(true);
     try {
-      const prompt = `You are a YouTube community manager for Hallow, a Catholic prayer and meditation app.
+      const systemPrompt = `You are a YouTube community manager for Hallow, a Catholic prayer and meditation app.
 
 MODERATION GUIDELINES:
 ${guidelines}
 
-COMMENT TO ANALYSE:
-Author: ${comment.author}
-Video: "${comment.videoTitle}"
-Text: "${comment.text}"
-Likes: ${comment.likeCount}
-
-Based on the guidelines, respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
+Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
 {
   "category": "positive|question|flag|neutral|spam|escalate",
   "should_heart": true|false,
@@ -263,19 +266,29 @@ Based on the guidelines, respond ONLY with valid JSON (no markdown fences, no pr
   "reason": "One concise sentence explaining your classification"
 }`;
 
+      const userMessage = `<comment>
+<author>${escapeXml(comment.author)}</author>
+<video>${escapeXml(comment.videoTitle)}</video>
+<text>${escapeXml(comment.text)}</text>
+<likes>${Number(comment.likeCount)}</likes>
+</comment>`;
+
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }]
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMessage }]
         })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(`API error ${res.status}`);
       const raw = data.content?.find(b => b.type === "text")?.text || "{}";
-      const clean = raw.replace(/```json|```/g, "").trim();
+      const clean = raw.replace(/^```(?:json)?\s*/m, "").replace(/\s*```$/m, "").trim();
       const parsed = JSON.parse(clean);
+      if (typeof parsed.category !== "string") throw new Error("Unexpected response shape");
       setReplyText(parsed.suggested_reply || "");
       onAction(comment.id, "analyse", parsed);
       if (parsed.should_heart) toast(`♥ Hearted — ${comment.author}`);
@@ -283,7 +296,7 @@ Based on the guidelines, respond ONLY with valid JSON (no markdown fences, no pr
       if (parsed.category === "spam") toast(`Hidden spam — ${comment.author}`);
     } catch(e) {
       toast("Analysis failed — check that API is connected");
-      console.error(e);
+      console.error("Analysis error:", e.message);
     }
     setLoading(false);
   }
@@ -459,7 +472,7 @@ function QueueTab({ comments, setComments, guidelines, anthropicKey, toast }) {
 }
 
 function App() {
-  const savedRaw = localStorage.getItem("hallow-yt-config");
+  const savedRaw = sessionStorage.getItem("hallow-yt-config");
   const saved = savedRaw ? JSON.parse(savedRaw) : {};
   const [tab, setTab] = useState(saved.connected ? "queue" : "setup");
   const [config, setConfig] = useState({ anthropicKey: "", clientId: "", clientSecret: "", channelId: "", ...(saved.config || {}) });
@@ -474,12 +487,12 @@ function App() {
   function handleConnect() {
     setConnected(true);
     setTab("queue");
-    localStorage.setItem("hallow-yt-config", JSON.stringify({ connected: true, config, guidelines }));
-    toast("Connected — credentials saved to this browser");
+    sessionStorage.setItem("hallow-yt-config", JSON.stringify({ connected: true, config, guidelines }));
+    toast("Connected — credentials saved for this session");
   }
 
   useEffect(() => {
-    if (connected) localStorage.setItem("hallow-yt-config", JSON.stringify({ connected, config, guidelines }));
+    if (connected) sessionStorage.setItem("hallow-yt-config", JSON.stringify({ connected, config, guidelines }));
   }, [config, guidelines, connected]);
 
   const mainTabs = connected
