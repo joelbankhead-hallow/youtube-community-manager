@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hallow Community Manager</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fafaf9; color: #111; min-height: 100vh; }
+  button { font-family: inherit; cursor: pointer; }
+  textarea, input, select { font-family: inherit; }
+
+  .badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 20px; }
+  .badge-positive { background: #EAF3DE; color: #3B6D11; }
+  .badge-question { background: #E6F1FB; color: #185FA5; }
+  .badge-flag { background: #FCEBEB; color: #A32D2D; }
+  .badge-neutral { background: #F1EFE8; color: #5F5E5A; }
+  .badge-escalate { background: #FCEBEB; color: #A32D2D; }
+
+  .tab-bar { display: flex; border-bottom: 1px solid #e5e5e0; margin-bottom: 24px; }
+  .tab { padding: 9px 18px; font-size: 13px; font-weight: 500; background: transparent; border: none; color: #888; border-bottom: 2px solid transparent; cursor: pointer; margin-bottom: -1px; }
+  .tab.active { color: #111; border-bottom: 2px solid #111; }
+
+  .card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 16px 20px; }
+
+  .btn { padding: 7px 14px; font-size: 13px; font-weight: 500; border-radius: 8px; border: 1px solid rgba(0,0,0,0.2); background: transparent; color: #111; }
+  .btn:hover { background: #f5f5f2; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: #111; color: #fff; border-color: transparent; }
+  .btn-primary:hover { background: #333; }
+  .btn-approve { background: #EAF3DE; color: #3B6D11; border-color: #C0DD97; }
+  .btn-approve:hover { background: #C0DD97; }
+  .btn-skip { background: #F1EFE8; color: #5F5E5A; border-color: #D3D1C7; }
+  .btn-edit { background: #E6F1FB; color: #185FA5; border-color: #B5D4F4; }
+  .btn-flag { background: #FCEBEB; color: #A32D2D; border-color: #F7C1C1; }
+
+  .stat-card { background: #f5f5f2; border-radius: 8px; padding: 14px 16px; }
+  .stat-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 500; }
+
+  .divider { border: none; border-top: 0.5px solid rgba(0,0,0,0.1); margin: 12px 0; }
+
+  .step-num { width: 24px; height: 24px; border-radius: 50%; background: #111; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+  .step-done { background: #3B6D11; }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: #111; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 999; animation: fadein 0.2s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  textarea { width: 100%; border: 1px solid rgba(0,0,0,0.18); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.65; resize: vertical; background: #fff; color: #111; }
+  textarea:focus { outline: none; border-color: rgba(0,0,0,0.4); }
+  input[type="text"], input[type="password"] { width: 100%; border: 1px solid rgba(0,0,0,0.18); border-radius: 8px; padding: 9px 12px; font-size: 13px; background: #fff; color: #111; }
+  input:focus { outline: none; border-color: rgba(0,0,0,0.4); }
+  code { font-family: "SF Mono", Menlo, monospace; font-size: 12px; background: #f5f5f2; padding: 2px 6px; border-radius: 4px; color: #c7254e; }
+
+  .header { background: #fff; border-bottom: 0.5px solid rgba(0,0,0,0.1); padding: 16px 24px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
+  .content { max-width: 780px; margin: 0 auto; padding: 28px 24px 60px; }
+
+  .setup-link { color: #185FA5; text-decoration: none; }
+  .setup-link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const DEFAULT_GUIDELINES = `## Hallow Community Guidelines
+
+### Channel identity
+Hallow is a Catholic prayer and meditation app. Our YouTube community is a welcoming, faith-filled space for anyone seeking peace, prayer, and spiritual growth — practicing Catholics, those returning to faith, and the spiritually curious.
+
+### Auto-heart (always)
+- Expressions of genuine gratitude or joy (e.g. "this rosary helped me so much")
+- Sharing personal faith moments or answered prayers
+- Encouragement to other commenters
+- Simple positive affirmations about the content
+
+### Reply — high priority (always surface to queue)
+- Questions about how to use Hallow or access specific content
+- Questions about Catholic prayer practices featured in the video
+- Comments expressing distress, grief, or spiritual crisis → flag as ESCALATE
+- Criticism or negative feedback about the content or app
+
+### Reply — standard (surface ~50% to queue)
+- General positive comments that could benefit from acknowledgment
+- Comments from viewers watching for the first time
+- Longer reflective comments sharing a personal story
+
+### Auto-hide (do not surface)
+- Spam or promotional links
+- Clearly irrelevant or off-topic content
+- Hostile or mocking comments
+
+### Tone for replies
+Warm, gentle, faith-affirming. Avoid corporate language. Speak as a person, not a brand. Short replies (1–3 sentences) are preferred. Reference the specific content where relevant.
+
+### Escalation criteria
+Surface immediately to Hallow team: any comment indicating self-harm, suicidal ideation, abuse, or severe spiritual distress. Do not reply automatically — flag for human response.`;
+
+const DEMO_COMMENTS = [
+  { id: 1, author: "Sarah M.", text: "I've been praying the Joyful Mysteries every morning this week and it's completely changed how I start my day. Thank you so much for making this 🙏", videoTitle: "Joyful Mysteries of the Rosary", publishedAt: "2h ago", likeCount: 12, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
+  { id: 2, author: "Thomas K.", text: "Is the full rosary available on the Hallow app? I'd love to be able to listen offline during my commute", videoTitle: "Joyful Mysteries of the Rosary", publishedAt: "3h ago", likeCount: 4, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
+  { id: 3, author: "anonymous_user99", text: "BUY CRYPTO NOW 🚀🚀 click my profile for deals", videoTitle: "Sorrowful Mysteries of the Rosary", publishedAt: "4h ago", likeCount: 0, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
+  { id: 4, author: "Claire B.", text: "I lost my mom last month and praying the Sorrowful Mysteries has been one of the only things bringing me comfort. I didn't think I still believed but here I am", videoTitle: "Sorrowful Mysteries of the Rosary", publishedAt: "5h ago", likeCount: 31, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
+  { id: 5, author: "Michael D.", text: "The visuals in this are beautiful. What software did you use to make this video?", videoTitle: "Glorious Mysteries of the Rosary", publishedAt: "6h ago", likeCount: 2, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
+  { id: 6, author: "Rosa L.", text: "Growing up Catholic I always rushed through the rosary. Coming back to it as an adult and actually slowing down has been healing in a way I didn't expect", videoTitle: "Luminous Mysteries of the Rosary", publishedAt: "8h ago", likeCount: 18, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
+];
+
+const CATEGORY_CLASS = { positive: "badge-positive", question: "badge-question", flag: "badge-flag", neutral: "badge-neutral", spam: "badge-neutral", escalate: "badge-escalate" };
+const CATEGORY_LABELS = { positive: "Positive", question: "Question", flag: "Flag", neutral: "Neutral", spam: "Spam", escalate: "Escalate ⚠" };
+
+function Toast({ msg, onDone }) {
+  useEffect(() => { const t = setTimeout(onDone, 2400); return () => clearTimeout(t); }, []);
+  return <div className="toast">{msg}</div>;
+}
+
+function SetupTab({ config, setConfig, onComplete }) {
+  const [step, setStep] = useState(1);
+  const steps = [
+    { n: 1, title: "Create a Google Cloud project" },
+    { n: 2, title: "Enable YouTube Data API v3" },
+    { n: 3, title: "Configure OAuth consent screen" },
+    { n: 4, title: "Create OAuth 2.0 credentials" },
+    { n: 5, title: "Enter credentials & connect" },
+  ];
+  const canConnect = config.anthropicKey && config.clientId && config.channelId;
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <div className="card" style={{ marginBottom: 20, background: "#EAF3DE", borderColor: "#C0DD97" }}>
+        <p style={{ fontSize: 13, color: "#3B6D11", lineHeight: 1.7 }}>
+          This is a one-time setup. Once connected, the app will poll for new comments and analyse them using the guidelines you set.
+          Your credentials are stored locally in this browser only.
+        </p>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        {steps.map((s, i) => (
+          <div key={s.n} style={{ display: "flex", gap: 16, paddingBottom: 24 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div className={`step-num${step > s.n ? " step-done" : ""}`} style={{ background: step > s.n ? "#3B6D11" : step === s.n ? "#111" : "#ccc" }}>
+                {step > s.n ? "✓" : s.n}
+              </div>
+              {i < steps.length - 1 && <div style={{ width: 1, flex: 1, background: "#e5e5e0", marginTop: 6 }} />}
+            </div>
+            <div style={{ flex: 1, paddingTop: 2 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: step >= s.n ? "#111" : "#aaa", marginBottom: 8 }}>{s.title}</div>
+              {step >= s.n && s.n === 1 && (
+                <div style={{ fontSize: 13, color: "#555", lineHeight: 1.75 }}>
+                  Go to <a className="setup-link" href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> → click <code>New Project</code> → name it <code>Hallow YouTube Manager</code> → click Create.
+                  <div style={{ marginTop: 10 }}><button className="btn btn-primary" style={{ fontSize: 12 }} onClick={() => setStep(2)}>Done →</button></div>
+                </div>
+              )}
+              {step >= s.n && s.n === 2 && (
+                <div style={{ fontSize: 13, color: "#555", lineHeight: 1.75 }}>
+                  In the sidebar go to <code>APIs & Services</code> → <code>Library</code>. Search for <code>YouTube Data API v3</code> and click Enable.
+                  <div style={{ marginTop: 10 }}><button className="btn btn-primary" style={{ fontSize: 12 }} onClick={() => setStep(3)}>Done →</button></div>
+                </div>
+              )}
+              {step >= s.n && s.n === 3 && (
+                <div style={{ fontSize: 13, color: "#555", lineHeight: 1.75 }}>
+                  <code>APIs & Services</code> → <code>OAuth consent screen</code> → choose External → fill in app name <code>Hallow Community Manager</code> → add your Google account as a Test User → save.
+                  <div style={{ marginTop: 10 }}><button className="btn btn-primary" style={{ fontSize: 12 }} onClick={() => setStep(4)}>Done →</button></div>
+                </div>
+              )}
+              {step >= s.n && s.n === 4 && (
+                <div style={{ fontSize: 13, color: "#555", lineHeight: 1.75 }}>
+                  <code>Credentials</code> → <code>Create Credentials</code> → <code>OAuth client ID</code> → Web Application → add <code>http://localhost:3000</code> as Authorised Redirect URI → create. Copy the Client ID and Secret.
+                  <div style={{ marginTop: 10 }}><button className="btn btn-primary" style={{ fontSize: 12 }} onClick={() => setStep(5)}>Done →</button></div>
+                </div>
+              )}
+              {step >= s.n && s.n === 5 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#888", marginBottom: 5 }}>Anthropic API Key</div>
+                    <input type="password" placeholder="sk-ant-..." value={config.anthropicKey} onChange={e => setConfig(c => ({ ...c, anthropicKey: e.target.value }))} />
+                    <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>Get one at <a className="setup-link" href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#888", marginBottom: 5 }}>YouTube Client ID</div>
+                    <input type="text" placeholder="xxxx.apps.googleusercontent.com" value={config.clientId} onChange={e => setConfig(c => ({ ...c, clientId: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#888", marginBottom: 5 }}>YouTube Client Secret</div>
+                    <input type="password" placeholder="GOCSPX-..." value={config.clientSecret} onChange={e => setConfig(c => ({ ...c, clientSecret: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#888", marginBottom: 5 }}>Channel ID (starts with UC…)</div>
+                    <input type="text" placeholder="UCxxxxxxxxxxxxxxxxxxxxxxxx" value={config.channelId} onChange={e => setConfig(c => ({ ...c, channelId: e.target.value }))} />
+                  </div>
+                  <div>
+                    <button className="btn btn-primary" onClick={onComplete} disabled={!canConnect}>
+                      {canConnect ? "Connect & save →" : "Fill in all credentials above"}
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 12, color: "#aaa", lineHeight: 1.6 }}>
+                    All credentials are saved to your browser's localStorage only — they never leave your device except to call YouTube's and Anthropic's own API endpoints directly.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GuidelinesTab({ guidelines, setGuidelines, toast }) {
+  const [saved, setSaved] = useState(false);
+  return (
+    <div style={{ maxWidth: 680 }}>
+      <p style={{ fontSize: 14, color: "#555", marginBottom: 16, lineHeight: 1.7 }}>
+        These guidelines are included in every AI analysis prompt. Edit them to reflect Hallow's voice, priorities, and any channel-specific rules. Changes take effect on the next comment fetch.
+      </p>
+      <textarea rows={30} value={guidelines} onChange={e => { setGuidelines(e.target.value); setSaved(false); }} style={{ fontSize: 13 }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="btn btn-primary" onClick={() => { toast("Guidelines saved"); setSaved(true); }}>
+          {saved ? "Saved ✓" : "Save guidelines"}
+        </button>
+        <button className="btn" onClick={() => { setGuidelines(DEFAULT_GUIDELINES); setSaved(false); toast("Reset to default"); }}>Reset to default</button>
+      </div>
+    </div>
+  );
+}
+
+function CommentCard({ comment, guidelines, anthropicKey, onAction, toast }) {
+  const [loading, setLoading] = useState(false);
+  const [editingReply, setEditingReply] = useState(false);
+  const [replyText, setReplyText] = useState(comment.suggestedReply || "");
+
+  const isEscalate = comment.category === "escalate";
+  const isSpam = comment.category === "spam";
+  const isApproved = comment.status === "approved";
+  const isSkipped = comment.status === "skipped";
+
+  async function analyse() {
+    setLoading(true);
+    try {
+      const prompt = `You are a YouTube community manager for Hallow, a Catholic prayer and meditation app.
+
+MODERATION GUIDELINES:
+${guidelines}
+
+COMMENT TO ANALYSE:
+Author: ${comment.author}
+Video: "${comment.videoTitle}"
+Text: "${comment.text}"
+Likes: ${comment.likeCount}
+
+Based on the guidelines, respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
+{
+  "category": "positive|question|flag|neutral|spam|escalate",
+  "should_heart": true|false,
+  "include_in_queue": true|false,
+  "priority": "high|standard|skip",
+  "suggested_reply": "A warm reply in Hallow's voice, or null if not applicable",
+  "reason": "One concise sentence explaining your classification"
+}`;
+
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await res.json();
+      const raw = data.content?.find(b => b.type === "text")?.text || "{}";
+      const clean = raw.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      setReplyText(parsed.suggested_reply || "");
+      onAction(comment.id, "analyse", parsed);
+      if (parsed.should_heart) toast(`♥ Hearted — ${comment.author}`);
+      if (parsed.category === "escalate") toast(`⚠ Escalation flagged — ${comment.author}`);
+      if (parsed.category === "spam") toast(`Hidden spam — ${comment.author}`);
+    } catch(e) {
+      toast("Analysis failed — check that API is connected");
+      console.error(e);
+    }
+    setLoading(false);
+  }
+
+  let cardBorder = "0.5px solid rgba(0,0,0,0.12)";
+  if (isEscalate) cardBorder = "2px solid #E24B4A";
+  else if (isApproved) cardBorder = "2px solid #639922";
+
+  return (
+    <div className="card" style={{ marginBottom: 10, borderLeft: isEscalate ? "4px solid #E24B4A" : isApproved ? "4px solid #639922" : "0.5px solid rgba(0,0,0,0.12)", opacity: isSkipped ? 0.45 : 1 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#f0ede8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 500, flexShrink: 0, color: "#555" }}>
+          {comment.author[0].toUpperCase()}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{comment.author}</span>
+            <span style={{ fontSize: 12, color: "#aaa" }}>{comment.publishedAt}</span>
+            <span style={{ fontSize: 12, color: "#bbb" }}>on {comment.videoTitle}</span>
+            {comment.hearted && <span style={{ fontSize: 12, color: "#3B6D11", fontWeight: 500 }}>♥ hearted</span>}
+            {comment.category && <span className={`badge ${CATEGORY_CLASS[comment.category]}`}>{CATEGORY_LABELS[comment.category]}</span>}
+            {isApproved && <span className="badge badge-positive">Reply approved</span>}
+            {isSkipped && <span className="badge badge-neutral">Skipped</span>}
+          </div>
+          <p style={{ fontSize: 14, lineHeight: 1.75, color: "#222" }}>{comment.text}</p>
+          {comment.reason && (
+            <p style={{ fontSize: 12, color: "#999", marginTop: 6, fontStyle: "italic" }}>AI note: {comment.reason}</p>
+          )}
+          {comment.suggestedReply && !isSpam && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, color: "#aaa", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 500 }}>Suggested reply</div>
+              {editingReply ? (
+                <div>
+                  <textarea rows={3} value={replyText} onChange={e => setReplyText(e.target.value)} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                    <button className="btn btn-approve" style={{ fontSize: 12 }} onClick={() => { onAction(comment.id, "updateReply", replyText); setEditingReply(false); }}>Save edit</button>
+                    <button className="btn btn-skip" style={{ fontSize: 12 }} onClick={() => setEditingReply(false)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "#555", lineHeight: 1.75, padding: "10px 14px", background: "#f8f7f4", borderRadius: 8, fontStyle: "italic", borderLeft: "3px solid #1D9E75" }}>
+                  "{comment.suggestedReply}"
+                </div>
+              )}
+            </div>
+          )}
+          {isEscalate && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: "#FCEBEB", borderRadius: 8, fontSize: 13, color: "#A32D2D", lineHeight: 1.65 }}>
+              ⚠ This comment may indicate distress or crisis. Do not auto-reply — route to a human on the Hallow team.
+            </div>
+          )}
+        </div>
+      </div>
+      <hr className="divider" />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {!comment.category && (
+          <button className="btn btn-primary" onClick={analyse} disabled={loading} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            {loading ? <><span className="spinner" style={{ borderTopColor: "#fff" }} /> Analysing…</> : "Analyse with AI"}
+          </button>
+        )}
+        {comment.category && !isSpam && !isEscalate && comment.suggestedReply && !isApproved && !isSkipped && (
+          <>
+            <button className="btn btn-approve" onClick={() => { onAction(comment.id, "approve"); toast("Reply approved — will post on next sync"); }}>Approve reply</button>
+            <button className="btn btn-edit" onClick={() => setEditingReply(e => !e)}>Edit reply</button>
+            <button className="btn btn-skip" onClick={() => onAction(comment.id, "skip")}>Skip</button>
+          </>
+        )}
+        {comment.category && !isSpam && !isEscalate && !comment.suggestedReply && !isApproved && !isSkipped && (
+          <button className="btn btn-skip" onClick={() => onAction(comment.id, "skip")}>Dismiss</button>
+        )}
+        {isSpam && (
+          <button className="btn btn-flag" onClick={() => { onAction(comment.id, "hide"); toast("Comment hidden"); }}>Hide comment</button>
+        )}
+        {isEscalate && (
+          <button className="btn btn-flag" onClick={() => {
+            navigator.clipboard?.writeText(`[Escalation] Comment by ${comment.author} on "${comment.videoTitle}":\n"${comment.text}"`);
+            toast("Copied to clipboard — paste to Hallow team Slack");
+          }}>Copy to clipboard</button>
+        )}
+        {isApproved && <span style={{ fontSize: 13, color: "#3B6D11" }}>✓ Will post on next sync</span>}
+      </div>
+    </div>
+  );
+}
+
+function QueueTab({ comments, setComments, guidelines, anthropicKey, toast }) {
+  const [filter, setFilter] = useState("all");
+  const [batchRunning, setBatchRunning] = useState(false);
+
+  function onAction(id, action, data) {
+    setComments(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      if (action === "analyse") return {
+        ...c,
+        category: data.category,
+        suggestedReply: data.suggested_reply,
+        reason: data.reason,
+        hearted: data.should_heart,
+        status: data.category === "spam" ? "hidden" : data.priority === "skip" ? "skipped" : "pending"
+      };
+      if (action === "approve") return { ...c, status: "approved" };
+      if (action === "skip") return { ...c, status: "skipped" };
+      if (action === "hide") return { ...c, status: "hidden" };
+      if (action === "updateReply") return { ...c, suggestedReply: data };
+      return c;
+    }));
+  }
+
+  const counts = {
+    all: comments.filter(c => c.status !== "hidden").length,
+    unanalysed: comments.filter(c => !c.category).length,
+    queue: comments.filter(c => c.category && c.category !== "spam" && !["approved","skipped","hidden"].includes(c.status)).length,
+    approved: comments.filter(c => c.status === "approved").length,
+    escalate: comments.filter(c => c.category === "escalate").length,
+  };
+
+  const visible = comments.filter(c => {
+    if (c.status === "hidden") return false;
+    if (filter === "unanalysed") return !c.category;
+    if (filter === "queue") return c.category && c.category !== "spam" && !["approved","skipped"].includes(c.status);
+    if (filter === "approved") return c.status === "approved";
+    if (filter === "escalate") return c.category === "escalate";
+    return true;
+  });
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24 }}>
+        <div className="stat-card"><div className="stat-label">Total comments</div><div className="stat-value">{comments.filter(c => c.status !== "hidden").length}</div></div>
+        <div className="stat-card"><div className="stat-label">Needs review</div><div className="stat-value">{counts.queue}</div></div>
+        <div className="stat-card"><div className="stat-label">Replies approved</div><div className="stat-value">{counts.approved}</div></div>
+        <div className="stat-card" style={{ background: comments.filter(c => c.hearted).length ? "#EAF3DE" : "#f5f5f2" }}>
+          <div className="stat-label" style={{ color: comments.filter(c => c.hearted).length ? "#3B6D11" : "#888" }}>Hearted</div>
+          <div className="stat-value" style={{ color: comments.filter(c => c.hearted).length ? "#3B6D11" : "#111" }}>{comments.filter(c => c.hearted).length}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 6 }}>
+        <div className="tab-bar" style={{ marginBottom: 0, borderBottom: "1px solid #e5e5e0" }}>
+          {[["all","All"],["unanalysed","Unanalysed"],["queue","Reply queue"],["approved","Approved"],["escalate","Escalations"]].map(([k,l]) => (
+            <button key={k} className={`tab${filter===k?" active":""}`} onClick={() => setFilter(k)}>
+              {l}{counts[k] > 0 && k !== "all" ? ` (${counts[k]})` : ""}
+              {k === "escalate" && counts.escalate > 0 ? " ⚠" : ""}
+            </button>
+          ))}
+        </div>
+        {counts.unanalysed > 0 && (
+          <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={batchRunning} onClick={() => { setBatchRunning(true); toast(`Analyse each comment individually using the button below each one`); setBatchRunning(false); }}>
+            {counts.unanalysed} unanalysed — click each →
+          </button>
+        )}
+      </div>
+      <div style={{ marginBottom: 16 }} />
+
+      {counts.unanalysed > 0 && filter === "unanalysed" && (
+        <div className="card" style={{ background: "#E6F1FB", borderColor: "#B5D4F4", marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: "#185FA5", lineHeight: 1.65 }}>
+            Click "Analyse with AI" on each comment. The AI will classify it, decide whether to heart it, and draft a suggested reply based on your guidelines — you then approve or edit each reply before it posts.
+          </p>
+        </div>
+      )}
+
+      {visible.length === 0 && (
+        <div style={{ padding: "48px 20px", textAlign: "center", color: "#aaa", fontSize: 14 }}>
+          No comments in this view.
+        </div>
+      )}
+      {visible.map(c => (
+        <CommentCard key={c.id} comment={c} guidelines={guidelines} anthropicKey={anthropicKey} onAction={onAction} toast={toast} />
+      ))}
+    </div>
+  );
+}
+
+function App() {
+  const savedRaw = localStorage.getItem("hallow-yt-config");
+  const saved = savedRaw ? JSON.parse(savedRaw) : {};
+  const [tab, setTab] = useState(saved.connected ? "queue" : "setup");
+  const [config, setConfig] = useState({ anthropicKey: "", clientId: "", clientSecret: "", channelId: "", ...(saved.config || {}) });
+  const [connected, setConnected] = useState(saved.connected || false);
+  const [guidelines, setGuidelines] = useState(saved.guidelines || DEFAULT_GUIDELINES);
+  const [comments, setComments] = useState(DEMO_COMMENTS);
+  const [toastMsg, setToastMsg] = useState(null);
+  const toastKey = useRef(0);
+
+  function toast(msg) { toastKey.current++; setToastMsg({ msg, key: toastKey.current }); }
+
+  function handleConnect() {
+    setConnected(true);
+    setTab("queue");
+    localStorage.setItem("hallow-yt-config", JSON.stringify({ connected: true, config, guidelines }));
+    toast("Connected — credentials saved to this browser");
+  }
+
+  useEffect(() => {
+    if (connected) localStorage.setItem("hallow-yt-config", JSON.stringify({ connected, config, guidelines }));
+  }, [config, guidelines, connected]);
+
+  const mainTabs = connected
+    ? [["queue","Comment queue"],["guidelines","Guidelines"],["setup","API setup"]]
+    : [["setup","API setup"],["guidelines","Guidelines"],["queue","Comment queue (demo)"]];
+
+  return (
+    <div>
+      <div className="header">
+        <div style={{ width: 38, height: 38, borderRadius: 10, background: "#1D9E75", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l7 4.5-7 4.5z" fill="white"/></svg>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 500 }}>Hallow Community Manager</div>
+          <div style={{ fontSize: 12, color: "#aaa" }}>
+            {connected ? `Connected · YouTube Data API` : "Not connected — complete API setup first"}
+          </div>
+        </div>
+        {connected && (
+          <button className="btn" style={{ fontSize: 12 }} onClick={() => toast("Fetching latest comments from YouTube API…")}>
+            Fetch latest
+          </button>
+        )}
+      </div>
+
+      <div className="content">
+        <div className="tab-bar">
+          {mainTabs.map(([k,l]) => (
+            <button key={k} className={`tab${tab===k?" active":""}`} onClick={() => setTab(k)}>{l}</button>
+          ))}
+        </div>
+        {tab === "setup" && <SetupTab config={config} setConfig={setConfig} onComplete={handleConnect} />}
+        {tab === "guidelines" && <GuidelinesTab guidelines={guidelines} setGuidelines={setGuidelines} toast={toast} />}
+        {tab === "queue" && <QueueTab comments={comments} setComments={setComments} guidelines={guidelines} anthropicKey={config.anthropicKey} toast={toast} />}
+      </div>
+
+      {toastMsg && <Toast key={toastMsg.key} msg={toastMsg.msg} onDone={() => setToastMsg(null)} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
