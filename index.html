@@ -293,7 +293,6 @@ ${guidelines}
 Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
 {
   "category": "positive|question|flag|neutral|spam|escalate",
-  "should_heart": true|false,
   "include_in_queue": true|false,
   "priority": "high|standard|skip",
   "suggested_reply": "A warm reply in Hallow's voice, or null if not applicable",
@@ -325,7 +324,6 @@ Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
       if (typeof parsed.category !== "string") throw new Error("Unexpected response shape");
       setReplyText(parsed.suggested_reply || "");
       onAction(comment.id, "analyse", parsed);
-      if (parsed.should_heart) toast(`♥ Hearted — ${comment.author}`);
       if (parsed.category === "escalate") toast(`⚠ Escalation flagged — ${comment.author}`);
       if (parsed.category === "spam") toast(`Hidden spam — ${comment.author}`);
     } catch(e) {
@@ -350,7 +348,6 @@ Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
             <span style={{ fontSize: 13, fontWeight: 500 }}>{comment.author}</span>
             <span style={{ fontSize: 12, color: "#aaa" }}>{comment.publishedAt}</span>
             <span style={{ fontSize: 12, color: "#bbb" }}>on {comment.videoTitle}</span>
-            {comment.hearted && <span style={{ fontSize: 12, color: "#3B6D11", fontWeight: 500 }}>♥ hearted</span>}
             {comment.category && <span className={`badge ${CATEGORY_CLASS[comment.category]}`}>{CATEGORY_LABELS[comment.category]}</span>}
             {isApproved && <span className="badge badge-positive">Reply approved</span>}
             {isSkipped && <span className="badge badge-neutral">Skipped</span>}
@@ -460,14 +457,10 @@ function QueueTab({ comments, setComments, guidelines, anthropicKey, ytToken, to
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 24 }}>
         <div className="stat-card"><div className="stat-label">Total comments</div><div className="stat-value">{comments.filter(c => c.status !== "hidden").length}</div></div>
         <div className="stat-card"><div className="stat-label">Needs review</div><div className="stat-value">{counts.queue}</div></div>
-        <div className="stat-card"><div className="stat-label">Replies approved</div><div className="stat-value">{counts.approved}</div></div>
-        <div className="stat-card" style={{ background: comments.filter(c => c.hearted).length ? "#EAF3DE" : "#f5f5f2" }}>
-          <div className="stat-label" style={{ color: comments.filter(c => c.hearted).length ? "#3B6D11" : "#888" }}>Hearted</div>
-          <div className="stat-value" style={{ color: comments.filter(c => c.hearted).length ? "#3B6D11" : "#111" }}>{comments.filter(c => c.hearted).length}</div>
-        </div>
+        <div className="stat-card"><div className="stat-label">Replies posted</div><div className="stat-value">{counts.approved}</div></div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 6 }}>
@@ -553,7 +546,7 @@ function App() {
     setFetching(true);
     try {
       const res = await fetch(
-        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&allThreadsRelatedToChannelId=${encodeURIComponent(config.channelId)}&maxResults=50&order=time`,
+        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&allThreadsRelatedToChannelId=${encodeURIComponent(config.channelId)}&maxResults=50&order=time&moderationStatus=published`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.status === 401) { setYtToken(null); toast("Session expired — re-authorizing…"); tokenClientRef.current?.requestAccessToken(); return; }
