@@ -179,7 +179,7 @@ function SetupTab({ config, setConfig, onComplete }) {
               )}
               {step >= s.n && s.n === 4 && (
                 <div style={{ fontSize: 13, color: "#555", lineHeight: 1.75 }}>
-                  <code>Credentials</code> → <code>Create Credentials</code> → <code>OAuth client ID</code> → Web Application → add <code>http://localhost:3000</code> as Authorised Redirect URI → create. Copy the Client ID and Secret.
+                  <code>Credentials</code> → <code>Create Credentials</code> → <code>OAuth client ID</code> → Web Application → add <code>https://joelbankhead-hallow.github.io</code> as an Authorised JavaScript Origin and <code>https://joelbankhead-hallow.github.io/youtube-community-manager/</code> as an Authorised Redirect URI → create. Copy the Client ID and Secret.
                   <div style={{ marginTop: 10 }}><button className="btn btn-primary" style={{ fontSize: 12 }} onClick={() => setStep(5)}>Done →</button></div>
                 </div>
               )}

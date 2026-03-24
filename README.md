@@ -12,7 +12,7 @@ An AI-powered YouTube comment moderation tool built for the Hallow channel.
 
 ## Live app
 
-👉 [Open the app](https://YOUR-USERNAME.github.io/youtube-community-manager/)
+👉 [Open the app](https://joelbankhead-hallow.github.io/youtube-community-manager/)
 
 ## Setup
 
@@ -24,7 +24,7 @@ You'll need a Google Cloud project with the YouTube Data API v3 enabled and an O
 
 The app calls the Anthropic Claude API directly from the browser. You'll need a key from [console.anthropic.com](https://console.anthropic.com). Add it in the **API Setup** tab.
 
-> **Note:** Credentials are stored in your browser's `localStorage` only — they are never sent to any server other than YouTube's and Anthropic's own endpoints.
+> **Note:** Credentials are stored in `sessionStorage` only — they are cleared when you close the tab and are never sent to any server other than YouTube's and Anthropic's own endpoints.
 
 ## Running locally
 
