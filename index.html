@@ -114,6 +114,40 @@ const DEMO_COMMENTS = [
   { id: 6, _isDemo: true, author: "Rosa L.", text: "Growing up Catholic I always rushed through the rosary. Coming back to it as an adult and actually slowing down has been healing in a way I didn't expect", videoTitle: "Luminous Mysteries of the Rosary", publishedAt: "8h ago", likeCount: 18, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
 ];
 
+async function analyseComment(comment, guidelines, anthropicKey) {
+  const systemPrompt = `You are a YouTube community manager for Hallow, a Catholic prayer and meditation app.
+
+MODERATION GUIDELINES:
+${guidelines}
+
+Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
+{
+  "category": "positive|question|flag|neutral|spam|escalate",
+  "include_in_queue": true|false,
+  "priority": "high|standard|skip",
+  "suggested_reply": "A warm reply in Hallow's voice, or null if not applicable",
+  "reason": "One concise sentence explaining your classification"
+}`;
+  const userMessage = `<comment>
+<author>${escapeXml(comment.author)}</author>
+<video>${escapeXml(comment.videoTitle)}</video>
+<text>${escapeXml(comment.text)}</text>
+<likes>${Number(comment.likeCount)}</likes>
+</comment>`;
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 512, system: systemPrompt, messages: [{ role: "user", content: userMessage }] })
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const data = await res.json();
+  const raw = data.content?.find(b => b.type === "text")?.text || "{}";
+  const clean = raw.replace(/^```(?:json)?\s*/m, "").replace(/\s*```$/m, "").trim();
+  const parsed = JSON.parse(clean);
+  if (typeof parsed.category !== "string") throw new Error("Unexpected response shape");
+  return parsed;
+}
+
 function formatAgo(date) {
   const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);
@@ -285,43 +319,7 @@ function CommentCard({ comment, guidelines, anthropicKey, ytToken, onAction, toa
   async function analyse() {
     setLoading(true);
     try {
-      const systemPrompt = `You are a YouTube community manager for Hallow, a Catholic prayer and meditation app.
-
-MODERATION GUIDELINES:
-${guidelines}
-
-Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
-{
-  "category": "positive|question|flag|neutral|spam|escalate",
-  "include_in_queue": true|false,
-  "priority": "high|standard|skip",
-  "suggested_reply": "A warm reply in Hallow's voice, or null if not applicable",
-  "reason": "One concise sentence explaining your classification"
-}`;
-
-      const userMessage = `<comment>
-<author>${escapeXml(comment.author)}</author>
-<video>${escapeXml(comment.videoTitle)}</video>
-<text>${escapeXml(comment.text)}</text>
-<likes>${Number(comment.likeCount)}</likes>
-</comment>`;
-
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userMessage }]
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const raw = data.content?.find(b => b.type === "text")?.text || "{}";
-      const clean = raw.replace(/^```(?:json)?\s*/m, "").replace(/\s*```$/m, "").trim();
-      const parsed = JSON.parse(clean);
-      if (typeof parsed.category !== "string") throw new Error("Unexpected response shape");
+      const parsed = await analyseComment(comment, guidelines, anthropicKey);
       setReplyText(parsed.suggested_reply || "");
       onAction(comment.id, "analyse", parsed);
       if (parsed.category === "escalate") toast(`⚠ Escalation flagged — ${comment.author}`);
@@ -416,7 +414,7 @@ Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
 }
 
 function QueueTab({ comments, setComments, guidelines, anthropicKey, ytToken, toast }) {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("queue");
   const [batchRunning, setBatchRunning] = useState(false);
 
   function onAction(id, action, data) {
@@ -580,18 +578,45 @@ function App() {
         };
       });
 
+      let newOnes = [];
       setComments(prev => {
         const existingIds = new Set(prev.map(c => c.id));
-        const newOnes = fetched.filter(c => !existingIds.has(c.id));
-        const merged = [...newOnes, ...prev.filter(c => !c._isDemo)];
-        return merged;
+        newOnes = fetched.filter(c => !existingIds.has(c.id));
+        return [...newOnes, ...prev.filter(c => !c._isDemo)];
       });
-      toast(`Loaded ${fetched.length} comments`);
+      toast(`Loaded ${fetched.length} comments — analysing…`);
+      if (newOnes.length > 0) batchAnalyse(newOnes);
     } catch(e) {
       toast("Failed to fetch comments");
       console.error("Fetch error:", e.message);
     }
     setFetching(false);
+  }
+
+  async function batchAnalyse(newComments) {
+    if (!config.anthropicKey) return;
+    const BATCH = 4;
+    for (let i = 0; i < newComments.length; i += BATCH) {
+      await Promise.all(
+        newComments.slice(i, i + BATCH).map(async c => {
+          try {
+            const parsed = await analyseComment(c, guidelines, config.anthropicKey);
+            setComments(prev => prev.map(existing =>
+              existing.id !== c.id ? existing : {
+                ...existing,
+                category: parsed.category,
+                suggestedReply: parsed.suggested_reply,
+                reason: parsed.reason,
+                status: parsed.category === "spam" ? "hidden" : parsed.priority === "skip" ? "skipped" : "pending"
+              }
+            ));
+          } catch(e) {
+            console.error("Batch analyse error:", e.message);
+          }
+        })
+      );
+    }
+    toast("Analysis complete");
   }
 
   function handleFetchLatest() {
