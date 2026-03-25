@@ -20,6 +20,7 @@
   .badge-flag { background: #FCEBEB; color: #A32D2D; }
   .badge-neutral { background: #F1EFE8; color: #5F5E5A; }
   .badge-escalate { background: #FCEBEB; color: #A32D2D; }
+  .badge-top { background: #FEF3C7; color: #92400E; }
 
   .tab-bar { display: flex; border-bottom: 1px solid #e5e5e0; margin-bottom: 24px; }
   .tab { padding: 9px 18px; font-size: 13px; font-weight: 500; background: transparent; border: none; color: #888; border-bottom: 2px solid transparent; cursor: pointer; margin-bottom: -1px; }
@@ -114,23 +115,28 @@ const DEMO_COMMENTS = [
   { id: 6, _isDemo: true, author: "Rosa L.", text: "Growing up Catholic I always rushed through the rosary. Coming back to it as an adult and actually slowing down has been healing in a way I didn't expect", videoTitle: "Luminous Mysteries of the Rosary", publishedAt: "8h ago", likeCount: 18, category: null, hearted: false, status: "pending", suggestedReply: null, reason: null },
 ];
 
-async function analyseComment(comment, guidelines, anthropicKey) {
+async function analyseComment(comment, guidelines, anthropicKey, instagramContext = "") {
   const systemPrompt = `You are a YouTube community manager for Hallow, a Catholic prayer and meditation app.
 
 MODERATION GUIDELINES:
 ${guidelines}
+${instagramContext ? `\nRECENT HALLOW INSTAGRAM POSTS — use these to vary reply tone, reference recent themes, and keep language fresh:\n${instagramContext}` : ""}
 
 Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
 {
   "category": "positive|question|flag|neutral|spam|escalate",
   "include_in_queue": true|false,
   "priority": "high|standard|skip",
+  "is_top": true|false,
   "suggested_reply": "A warm, specific reply in Hallow's voice — always provide one unless category is spam or priority is skip",
   "reason": "One concise sentence explaining your classification"
-}`;
+}
+
+Set is_top to true only for comments that are especially thoughtful, moving, high-engagement, or would make an outstanding showcase reply for the community.`;
   const userMessage = `<comment>
 <author>${escapeXml(comment.author)}</author>
 <video>${escapeXml(comment.videoTitle)}</video>
+${comment.videoDescription ? `<video_description>${escapeXml(comment.videoDescription)}</video_description>` : ""}
 <text>${escapeXml(comment.text)}</text>
 <likes>${Number(comment.likeCount)}</likes>
 </comment>`;
@@ -265,14 +271,29 @@ function SetupTab({ config, setConfig, onComplete }) {
   );
 }
 
-function GuidelinesTab({ guidelines, setGuidelines, toast }) {
+function GuidelinesTab({ guidelines, setGuidelines, instagramContext, setInstagramContext, toast }) {
   const [saved, setSaved] = useState(false);
   return (
     <div style={{ maxWidth: 680 }}>
       <p style={{ fontSize: 14, color: "#555", marginBottom: 16, lineHeight: 1.7 }}>
         These guidelines are included in every AI analysis prompt. Edit them to reflect Hallow's voice, priorities, and any channel-specific rules. Changes take effect on the next comment fetch.
       </p>
-      <textarea rows={30} value={guidelines} onChange={e => { setGuidelines(e.target.value); setSaved(false); }} style={{ fontSize: 13 }} />
+      <textarea rows={28} value={guidelines} onChange={e => { setGuidelines(e.target.value); setSaved(false); }} style={{ fontSize: 13 }} />
+
+      <div style={{ marginTop: 28, marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>Instagram brand context</div>
+        <p style={{ fontSize: 13, color: "#555", marginBottom: 12, lineHeight: 1.65 }}>
+          Paste 3–5 recent Hallow Instagram captions here. Claude will use these to vary reply tone, reference recent themes, and keep responses feeling current — not templated.
+        </p>
+        <textarea
+          rows={8}
+          value={instagramContext}
+          onChange={e => { setInstagramContext(e.target.value); setSaved(false); }}
+          placeholder={"Example:\n\"Starting your morning with 5 minutes of silence can change everything. Try the new Dawn Prayer on Hallow.\"\n\n\"The Rosary isn't just a prayer — it's a conversation. Join us this October for our 31-day Rosary challenge.\""}
+          style={{ fontSize: 13 }}
+        />
+      </div>
+
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button className="btn btn-primary" onClick={() => { toast("Guidelines saved"); setSaved(true); }}>
           {saved ? "Saved ✓" : "Save guidelines"}
@@ -283,7 +304,7 @@ function GuidelinesTab({ guidelines, setGuidelines, toast }) {
   );
 }
 
-function CommentCard({ comment, guidelines, anthropicKey, ytToken, onAction, toast }) {
+function CommentCard({ comment, guidelines, anthropicKey, instagramContext, ytToken, onAction, toast }) {
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
   const [editingReply, setEditingReply] = useState(false);
@@ -319,7 +340,7 @@ function CommentCard({ comment, guidelines, anthropicKey, ytToken, onAction, toa
   async function analyse() {
     setLoading(true);
     try {
-      const parsed = await analyseComment(comment, guidelines, anthropicKey);
+      const parsed = await analyseComment(comment, guidelines, anthropicKey, instagramContext);
       setReplyText(parsed.suggested_reply || "");
       onAction(comment.id, "analyse", parsed);
       if (parsed.category === "escalate") toast(`⚠ Escalation flagged — ${comment.author}`);
@@ -331,12 +352,8 @@ function CommentCard({ comment, guidelines, anthropicKey, ytToken, onAction, toa
     setLoading(false);
   }
 
-  let cardBorder = "0.5px solid rgba(0,0,0,0.12)";
-  if (isEscalate) cardBorder = "2px solid #E24B4A";
-  else if (isApproved) cardBorder = "2px solid #639922";
-
   return (
-    <div className="card" style={{ marginBottom: 10, borderLeft: isEscalate ? "4px solid #E24B4A" : isApproved ? "4px solid #639922" : "0.5px solid rgba(0,0,0,0.12)", opacity: isSkipped ? 0.45 : 1 }}>
+    <div className="card" style={{ marginBottom: 10, borderLeft: isEscalate ? "4px solid #E24B4A" : isApproved ? "4px solid #639922" : comment.isTop ? "4px solid #F59E0B" : "0.5px solid rgba(0,0,0,0.12)", opacity: isSkipped ? 0.45 : 1 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#f0ede8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 500, flexShrink: 0, color: "#555" }}>
           {comment.author[0].toUpperCase()}
@@ -346,6 +363,7 @@ function CommentCard({ comment, guidelines, anthropicKey, ytToken, onAction, toa
             <span style={{ fontSize: 13, fontWeight: 500 }}>{comment.author}</span>
             <span style={{ fontSize: 12, color: "#aaa" }}>{comment.publishedAt}</span>
             <span style={{ fontSize: 12, color: "#bbb" }}>on {comment.videoTitle}</span>
+            {comment.isTop && <span className="badge badge-top">⭐ Top reply</span>}
             {comment.category && <span className={`badge ${CATEGORY_CLASS[comment.category]}`}>{CATEGORY_LABELS[comment.category]}</span>}
             {isApproved && <span className="badge badge-positive">Reply approved</span>}
             {isSkipped && <span className="badge badge-neutral">Skipped</span>}
@@ -413,9 +431,8 @@ function CommentCard({ comment, guidelines, anthropicKey, ytToken, onAction, toa
   );
 }
 
-function QueueTab({ comments, setComments, guidelines, anthropicKey, ytToken, toast }) {
+function QueueTab({ comments, setComments, guidelines, anthropicKey, instagramContext, ytToken, toast }) {
   const [filter, setFilter] = useState("queue");
-  const [batchRunning, setBatchRunning] = useState(false);
 
   function onAction(id, action, data) {
     setComments(prev => prev.map(c => {
@@ -423,6 +440,7 @@ function QueueTab({ comments, setComments, guidelines, anthropicKey, ytToken, to
       if (action === "analyse") return {
         ...c,
         category: data.category,
+        isTop: data.is_top || false,
         suggestedReply: data.suggested_reply,
         reason: data.reason,
         hearted: data.should_heart,
@@ -436,10 +454,12 @@ function QueueTab({ comments, setComments, guidelines, anthropicKey, ytToken, to
     }));
   }
 
+  const inQueue = c => c.category && c.category !== "spam" && !["approved","skipped","hidden"].includes(c.status);
   const counts = {
     all: comments.filter(c => c.status !== "hidden").length,
     unanalysed: comments.filter(c => !c.category).length,
-    queue: comments.filter(c => c.category && c.category !== "spam" && !["approved","skipped","hidden"].includes(c.status)).length,
+    top: comments.filter(c => c.isTop && inQueue(c)).length,
+    queue: comments.filter(c => inQueue(c)).length,
     approved: comments.filter(c => c.status === "approved").length,
     escalate: comments.filter(c => c.category === "escalate").length,
   };
@@ -447,52 +467,52 @@ function QueueTab({ comments, setComments, guidelines, anthropicKey, ytToken, to
   const visible = comments.filter(c => {
     if (c.status === "hidden") return false;
     if (filter === "unanalysed") return !c.category;
-    if (filter === "queue") return c.category && c.category !== "spam" && !["approved","skipped"].includes(c.status);
+    if (filter === "top") return c.isTop && inQueue(c);
+    if (filter === "queue") return inQueue(c);
     if (filter === "approved") return c.status === "approved";
     if (filter === "escalate") return c.category === "escalate";
     return true;
   });
 
+  // Sort: top comments first within any view
+  const sorted = [...visible].sort((a, b) => (b.isTop ? 1 : 0) - (a.isTop ? 1 : 0));
+
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24 }}>
         <div className="stat-card"><div className="stat-label">Total comments</div><div className="stat-value">{comments.filter(c => c.status !== "hidden").length}</div></div>
-        <div className="stat-card"><div className="stat-label">Needs review</div><div className="stat-value">{counts.queue}</div></div>
+        <div className="stat-card"><div className="stat-label">In reply queue</div><div className="stat-value">{counts.queue}</div></div>
+        <div className="stat-card" style={{ borderLeft: "3px solid #F59E0B" }}><div className="stat-label">⭐ Top replies</div><div className="stat-value">{counts.top}</div></div>
         <div className="stat-card"><div className="stat-label">Replies posted</div><div className="stat-value">{counts.approved}</div></div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 6 }}>
         <div className="tab-bar" style={{ marginBottom: 0, borderBottom: "1px solid #e5e5e0" }}>
-          {[["all","All"],["unanalysed","Unanalysed"],["queue","Reply queue"],["approved","Approved"],["escalate","Escalations"]].map(([k,l]) => (
+          {[["queue","Reply queue"],["top","⭐ Top replies"],["all","All"],["unanalysed","Unanalysed"],["approved","Approved"],["escalate","Escalations"]].map(([k,l]) => (
             <button key={k} className={`tab${filter===k?" active":""}`} onClick={() => setFilter(k)}>
               {l}{counts[k] > 0 && k !== "all" ? ` (${counts[k]})` : ""}
               {k === "escalate" && counts.escalate > 0 ? " ⚠" : ""}
             </button>
           ))}
         </div>
-        {counts.unanalysed > 0 && (
-          <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={batchRunning} onClick={() => { setBatchRunning(true); toast(`Analyse each comment individually using the button below each one`); setBatchRunning(false); }}>
-            {counts.unanalysed} unanalysed — click each →
-          </button>
-        )}
       </div>
       <div style={{ marginBottom: 16 }} />
 
-      {counts.unanalysed > 0 && filter === "unanalysed" && (
-        <div className="card" style={{ background: "#E6F1FB", borderColor: "#B5D4F4", marginBottom: 16 }}>
-          <p style={{ fontSize: 13, color: "#185FA5", lineHeight: 1.65 }}>
-            Click "Analyse with AI" on each comment. The AI will classify it, decide whether to heart it, and draft a suggested reply based on your guidelines — you then approve or edit each reply before it posts.
+      {filter === "top" && counts.top === 0 && (
+        <div className="card" style={{ background: "#FEF3C7", borderColor: "#FCD34D", marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: "#92400E", lineHeight: 1.65 }}>
+            No top replies yet. Load & analyse your comments — Claude will flag the most thoughtful and moving ones here automatically.
           </p>
         </div>
       )}
 
-      {visible.length === 0 && (
+      {visible.length === 0 && filter !== "top" && (
         <div style={{ padding: "48px 20px", textAlign: "center", color: "#aaa", fontSize: 14 }}>
           No comments in this view.
         </div>
       )}
-      {visible.map(c => (
-        <CommentCard key={c.id} comment={c} guidelines={guidelines} anthropicKey={anthropicKey} ytToken={ytToken} onAction={onAction} toast={toast} />
+      {sorted.map(c => (
+        <CommentCard key={c.id} comment={c} guidelines={guidelines} anthropicKey={anthropicKey} instagramContext={instagramContext} ytToken={ytToken} onAction={onAction} toast={toast} />
       ))}
     </div>
   );
@@ -505,6 +525,7 @@ function App() {
   const [config, setConfig] = useState({ anthropicKey: "", clientId: "", clientSecret: "", channelId: "", ...(saved.config || {}) });
   const [connected, setConnected] = useState(saved.connected || false);
   const [guidelines, setGuidelines] = useState(saved.guidelines || DEFAULT_GUIDELINES);
+  const [instagramContext, setInstagramContext] = useState(saved.instagramContext || "");
   const [comments, setComments] = useState(DEMO_COMMENTS);
   const [toastMsg, setToastMsg] = useState(null);
   const [ytToken, setYtToken] = useState(null);
@@ -559,19 +580,25 @@ function App() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const vidData = await vidRes.json();
-      const videoTitles = Object.fromEntries((vidData.items || []).map(v => [v.id, v.snippet.title]));
+      const videoInfo = Object.fromEntries((vidData.items || []).map(v => [v.id, {
+        title: v.snippet.title,
+        description: (v.snippet.description || "").slice(0, 400)
+      }]));
 
       const fetched = data.items.map(item => {
         const c = item.snippet.topLevelComment.snippet;
+        const vid = videoInfo[item.snippet.videoId] || {};
         return {
           id: item.id,
           commentId: item.snippet.topLevelComment.id,
           author: c.authorDisplayName,
           text: c.textDisplay,
-          videoTitle: videoTitles[item.snippet.videoId] || item.snippet.videoId,
+          videoTitle: vid.title || item.snippet.videoId,
+          videoDescription: vid.description || "",
           publishedAt: formatAgo(new Date(c.publishedAt)),
           likeCount: c.likeCount,
           category: null,
+          isTop: false,
           hearted: false,
           status: "pending",
           suggestedReply: null,
@@ -603,11 +630,12 @@ function App() {
       await Promise.all(
         newComments.slice(i, i + BATCH).map(async c => {
           try {
-            const parsed = await analyseComment(c, guidelines, config.anthropicKey);
+            const parsed = await analyseComment(c, guidelines, config.anthropicKey, instagramContext);
             setComments(prev => prev.map(existing =>
               existing.id !== c.id ? existing : {
                 ...existing,
                 category: parsed.category,
+                isTop: parsed.is_top || false,
                 suggestedReply: parsed.suggested_reply,
                 reason: parsed.reason,
                 status: parsed.category === "spam" ? "hidden" : parsed.priority === "skip" ? "skipped" : "pending"
@@ -641,8 +669,8 @@ function App() {
   }
 
   useEffect(() => {
-    if (connected) sessionStorage.setItem("hallow-yt-config", JSON.stringify({ connected, config, guidelines }));
-  }, [config, guidelines, connected]);
+    if (connected) sessionStorage.setItem("hallow-yt-config", JSON.stringify({ connected, config, guidelines, instagramContext }));
+  }, [config, guidelines, instagramContext, connected]);
 
   const mainTabs = connected
     ? [["queue","Comment queue"],["guidelines","Guidelines"],["setup","API setup"]]
@@ -678,8 +706,8 @@ function App() {
           ))}
         </div>
         {tab === "setup" && <SetupTab config={config} setConfig={setConfig} onComplete={handleConnect} />}
-        {tab === "guidelines" && <GuidelinesTab guidelines={guidelines} setGuidelines={setGuidelines} toast={toast} />}
-        {tab === "queue" && <QueueTab comments={comments} setComments={setComments} guidelines={guidelines} anthropicKey={config.anthropicKey} ytToken={ytToken} toast={toast} />}
+        {tab === "guidelines" && <GuidelinesTab guidelines={guidelines} setGuidelines={setGuidelines} instagramContext={instagramContext} setInstagramContext={setInstagramContext} toast={toast} />}
+        {tab === "queue" && <QueueTab comments={comments} setComments={setComments} guidelines={guidelines} anthropicKey={config.anthropicKey} instagramContext={instagramContext} ytToken={ytToken} toast={toast} />}
       </div>
 
       {toastMsg && <Toast key={toastMsg.key} msg={toastMsg.msg} onDone={() => setToastMsg(null)} />}
