@@ -132,7 +132,7 @@ Respond ONLY with valid JSON (no markdown fences, no preamble, nothing else):
   "reason": "One concise sentence explaining your classification"
 }
 
-Set is_top to true only for comments that are especially thoughtful, moving, high-engagement, or would make an outstanding showcase reply for the community.`;
+Set is_top to true for any genuinely positive comment worth acknowledging — warm gratitude, personal faith moments, short but sincere reactions. You don't need length or depth. Also true for especially thoughtful or high-engagement comments. Err on the side of inclusion.`;
   const userMessage = `<comment>
 <author>${escapeXml(comment.author)}</author>
 <video>${escapeXml(comment.videoTitle)}</video>
@@ -152,6 +152,19 @@ ${comment.videoDescription ? `<video_description>${escapeXml(comment.videoDescri
   const parsed = JSON.parse(clean);
   if (typeof parsed.category !== "string") throw new Error("Unexpected response shape");
   return parsed;
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function extractVideoId(input) {
+  const match = input.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input.trim())) return input.trim();
+  return null;
 }
 
 function formatAgo(date) {
@@ -271,7 +284,42 @@ function SetupTab({ config, setConfig, onComplete }) {
   );
 }
 
-function GuidelinesTab({ guidelines, setGuidelines, instagramContext, setInstagramContext, toast }) {
+function MonitoredVideos({ pinnedVideos, onChange }) {
+  const [input, setInput] = useState("");
+  function add() {
+    const id = extractVideoId(input.trim());
+    if (!id || pinnedVideos.includes(id)) { return; }
+    onChange([...pinnedVideos, id]);
+    setInput("");
+  }
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>Monitored videos</div>
+      <p style={{ fontSize: 13, color: "#555", marginBottom: 12, lineHeight: 1.65 }}>
+        Paste a YouTube URL or video ID. Every fetch will pull all recent comments from these videos — useful for high-priority content you always want fully covered.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input type="text" placeholder="youtube.com/watch?v=… or video ID" value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && add()}
+          style={{ flex: 1 }} />
+        <button className="btn btn-primary" onClick={add} style={{ whiteSpace: "nowrap", fontSize: 12 }}>Add</button>
+      </div>
+      {pinnedVideos.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {pinnedVideos.map(id => (
+            <div key={id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", background: "#f5f5f2", borderRadius: 8 }}>
+              <a href={`https://youtube.com/watch?v=${id}`} target="_blank" style={{ flex: 1, fontSize: 12, fontFamily: "SF Mono, Menlo, monospace", color: "#185FA5", textDecoration: "none" }}>{id}</a>
+              <button className="btn" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => onChange(pinnedVideos.filter(v => v !== id))}>Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GuidelinesTab({ guidelines, setGuidelines, instagramContext, setInstagramContext, pinnedVideos, onPinnedVideosChange, toast }) {
   const [saved, setSaved] = useState(false);
   return (
     <div style={{ maxWidth: 680 }}>
@@ -294,7 +342,9 @@ function GuidelinesTab({ guidelines, setGuidelines, instagramContext, setInstagr
         />
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+      <MonitoredVideos pinnedVideos={pinnedVideos} onChange={ids => { onPinnedVideosChange(ids); setSaved(false); }} />
+
+      <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
         <button className="btn btn-primary" onClick={() => { toast("Guidelines saved"); setSaved(true); }}>
           {saved ? "Saved ✓" : "Save guidelines"}
         </button>
@@ -522,7 +572,7 @@ function App() {
   const savedRaw = sessionStorage.getItem("hallow-yt-config");
   const saved = savedRaw ? JSON.parse(savedRaw) : {};
   const [tab, setTab] = useState(saved.connected ? "queue" : "setup");
-  const [config, setConfig] = useState({ anthropicKey: "", clientId: "", clientSecret: "", channelId: "", ...(saved.config || {}) });
+  const [config, setConfig] = useState({ anthropicKey: "", clientId: "", clientSecret: "", channelId: "", pinnedVideos: [], ...(saved.config || {}) });
   const [connected, setConnected] = useState(saved.connected || false);
   const [guidelines, setGuidelines] = useState(saved.guidelines || DEFAULT_GUIDELINES);
   const [instagramContext, setInstagramContext] = useState(saved.instagramContext || "");
@@ -565,27 +615,50 @@ function App() {
     if (!token || !config.channelId) return;
     setFetching(true);
     try {
+      // Channel-wide recent comments
       const res = await fetch(
-        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&allThreadsRelatedToChannelId=${encodeURIComponent(config.channelId)}&maxResults=50&order=time&moderationStatus=published`,
+        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&allThreadsRelatedToChannelId=${encodeURIComponent(config.channelId)}&maxResults=100&order=time&moderationStatus=published`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.status === 401) { setYtToken(null); toast("Session expired — re-authorizing…"); tokenClientRef.current?.requestAccessToken(); return; }
       if (!res.ok) throw new Error(`YouTube API ${res.status}`);
       const data = await res.json();
-      if (!data.items?.length) { toast("No comments found"); setFetching(false); return; }
+      let allItems = data.items || [];
 
-      const videoIds = [...new Set(data.items.map(i => i.snippet.videoId))];
-      const vidRes = await fetch(
-        `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoIds.join(",")}&maxResults=50`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      // Pinned video fetches — all unresponded comments
+      const pinnedVideos = config.pinnedVideos || [];
+      for (const videoId of pinnedVideos) {
+        try {
+          const pvRes = await fetch(
+            `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${encodeURIComponent(videoId)}&maxResults=100&order=time&moderationStatus=published`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (pvRes.ok) {
+            const pvData = await pvRes.json();
+            allItems = allItems.concat(pvData.items || []);
+          }
+        } catch(e) { console.error(`Pinned video ${videoId} fetch error:`, e.message); }
+      }
+
+      if (!allItems.length) { toast("No comments found"); setFetching(false); return; }
+
+      // Deduplicate
+      const seen = new Set();
+      allItems = allItems.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
+
+      // Batch fetch video info (API allows 50 IDs per call)
+      const videoIds = [...new Set(allItems.map(i => i.snippet.videoId))];
+      const videoInfoChunks = await Promise.all(
+        chunk(videoIds, 50).map(ids =>
+          fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${ids.join(",")}&maxResults=50`, { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.json()).then(d => d.items || [])
+        )
       );
-      const vidData = await vidRes.json();
-      const videoInfo = Object.fromEntries((vidData.items || []).map(v => [v.id, {
-        title: v.snippet.title,
-        description: (v.snippet.description || "").slice(0, 400)
-      }]));
+      const videoInfo = Object.fromEntries(
+        videoInfoChunks.flat().map(v => [v.id, { title: v.snippet.title, description: (v.snippet.description || "").slice(0, 400) }])
+      );
 
-      const fetched = data.items.map(item => {
+      const fetched = allItems.map(item => {
         const c = item.snippet.topLevelComment.snippet;
         const vid = videoInfo[item.snippet.videoId] || {};
         return {
@@ -706,7 +779,7 @@ function App() {
           ))}
         </div>
         {tab === "setup" && <SetupTab config={config} setConfig={setConfig} onComplete={handleConnect} />}
-        {tab === "guidelines" && <GuidelinesTab guidelines={guidelines} setGuidelines={setGuidelines} instagramContext={instagramContext} setInstagramContext={setInstagramContext} toast={toast} />}
+        {tab === "guidelines" && <GuidelinesTab guidelines={guidelines} setGuidelines={setGuidelines} instagramContext={instagramContext} setInstagramContext={setInstagramContext} pinnedVideos={config.pinnedVideos} onPinnedVideosChange={ids => setConfig(c => ({ ...c, pinnedVideos: ids }))} toast={toast} />}
         {tab === "queue" && <QueueTab comments={comments} setComments={setComments} guidelines={guidelines} anthropicKey={config.anthropicKey} instagramContext={instagramContext} ytToken={ytToken} toast={toast} />}
       </div>
 
