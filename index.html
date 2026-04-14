@@ -615,9 +615,11 @@ function App() {
     if (!token || !config.channelId) return;
     setFetching(true);
     try {
-      // Channel-wide recent comments
+      const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+      // Channel-wide recent comments (50, already ordered by time so all recent)
       const res = await fetch(
-        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&allThreadsRelatedToChannelId=${encodeURIComponent(config.channelId)}&maxResults=100&order=time&moderationStatus=published`,
+        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&allThreadsRelatedToChannelId=${encodeURIComponent(config.channelId)}&maxResults=50&order=time&moderationStatus=published`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.status === 401) { setYtToken(null); toast("Session expired — re-authorizing…"); tokenClientRef.current?.requestAccessToken(); return; }
@@ -625,7 +627,7 @@ function App() {
       const data = await res.json();
       let allItems = data.items || [];
 
-      // Pinned video fetches — all unresponded comments
+      // Pinned video fetches — last 7 days only
       const pinnedVideos = config.pinnedVideos || [];
       for (const videoId of pinnedVideos) {
         try {
@@ -635,16 +637,24 @@ function App() {
           );
           if (pvRes.ok) {
             const pvData = await pvRes.json();
-            allItems = allItems.concat(pvData.items || []);
+            const recent = (pvData.items || []).filter(item => {
+              const pub = new Date(item.snippet.topLevelComment.snippet.publishedAt).getTime();
+              return pub > oneWeekAgo;
+            });
+            allItems = allItems.concat(recent);
           }
         } catch(e) { console.error(`Pinned video ${videoId} fetch error:`, e.message); }
       }
 
       if (!allItems.length) { toast("No comments found"); setFetching(false); return; }
 
-      // Deduplicate
+      // Deduplicate, then drop anything that already has a reply
       const seen = new Set();
-      allItems = allItems.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
+      allItems = allItems.filter(item => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return item.snippet.totalReplyCount === 0;
+      });
 
       // Batch fetch video info (API allows 50 IDs per call)
       const videoIds = [...new Set(allItems.map(i => i.snippet.videoId))];
